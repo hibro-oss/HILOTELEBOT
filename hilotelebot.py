@@ -335,7 +335,7 @@ async def fetch_items(session: aiohttp.ClientSession, brand: str, max_price: flo
         return []
 
 
-async def fetch_resale_price(session: aiohttp.ClientSession, brand: str, title: str, purchase_price: float) -> str:
+async def fetch_market_price(session: aiohttp.ClientSession, brand: str, title: str) -> float | None:
     keywords = " ".join(title.split()[:3])
     params = {
         "search_text": f"{brand} {keywords}",
@@ -352,7 +352,7 @@ async def fetch_resale_price(session: aiohttp.ClientSession, brand: str, title: 
             timeout=aiohttp.ClientTimeout(total=8)
         ) as resp:
             if resp.status != 200:
-                return f"{purchase_price + 3:.0f} €"
+                return None
             data = await resp.json()
             items = data.get("items", [])
             prices = []
@@ -365,16 +365,13 @@ async def fetch_resale_price(session: aiohttp.ClientSession, brand: str, title: 
                 except (ValueError, TypeError):
                     pass
             if not prices:
-                return f"{purchase_price + 3:.0f} €"
-            # Exclure les valeurs aberrantes (top et bottom 20%)
+                return None
             prices.sort()
             cut = max(1, len(prices) // 5)
             prices = prices[cut:-cut] if len(prices) > 2 else prices
-            market_price = prices[len(prices) // 2]
-            resale = max(market_price + 3, purchase_price + 3)
-            return f"{resale:.0f} €"
+            return prices[len(prices) // 2]
     except Exception:
-        return f"{purchase_price + 3:.0f} €"
+        return None
 
 
 def is_interesting(item: dict) -> bool:
@@ -399,7 +396,7 @@ def get_price(item: dict) -> float:
 # ============================================================
 # EMBED + BOUTONS
 # ============================================================
-def build_embed(item: dict, brand: str, resale_price: str = "N/A") -> discord.Embed:
+def build_embed(item: dict, brand: str, market_price: float | None = None) -> discord.Embed:
     title = item.get("title", "Article sans titre")
     raw_price = item.get("price", "?")
     if isinstance(raw_price, dict):
@@ -424,7 +421,18 @@ def build_embed(item: dict, brand: str, resale_price: str = "N/A") -> discord.Em
     embed.add_field(name="📐 Taille", value=size, inline=True)
     embed.add_field(name="💎 État", value=condition.replace("_", " ").title(), inline=True)
     embed.add_field(name="💰 Prix achat", value=f"{raw_price} €", inline=True)
-    embed.add_field(name="📈 Prix revente", value=resale_price, inline=True)
+
+    if market_price is not None:
+        try:
+            purchase = float(raw_price)
+            marge = market_price - purchase
+            suggested = market_price * 1.10
+            embed.add_field(name="📊 Prix marché", value=f"{market_price:.0f} €", inline=True)
+            embed.add_field(name="💸 Marge", value=f"+{marge:.0f} € ({marge / market_price * 100:.0f}%)", inline=True)
+            embed.add_field(name="🏷 Prix suggéré", value=f"{suggested:.0f} €", inline=True)
+        except (ValueError, TypeError):
+            embed.add_field(name="📊 Prix marché", value=f"{market_price:.0f} €", inline=True)
+
     embed.set_footer(text="🏷️ Vinted Lab | hilote")
 
     photos = item.get("photos", [])
@@ -474,11 +482,17 @@ async def botall(ctx: commands.Context):
             new_items.sort(key=get_price)
 
             for item in new_items[:3]:
+                purchase_price = get_price(item)
+                market = await fetch_market_price(session, brand, item.get("title", ""))
+
+                # Ignorer si l'article n'est pas au moins 10% sous le marché
+                if market and purchase_price >= market * 0.90:
+                    continue
+
                 item_id = item.get("id")
                 sent_ids.add(item_id)
 
-                resale = await fetch_resale_price(session, brand, item.get("title", ""), get_price(item))
-                embed = build_embed(item, brand, resale)
+                embed = build_embed(item, brand, market)
                 buttons = build_buttons(item, brand)
 
                 try:
