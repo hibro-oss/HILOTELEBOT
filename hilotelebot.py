@@ -523,7 +523,7 @@ async def nike(ctx: commands.Context):
         await get_vinted_cookie(session)
 
         total_sent = 0
-        for brand in ("Nike", "Nike ACG"):
+        for brand in ("Nike",):
             max_p = MAX_PRICE.get(brand)
             items = await fetch_items(session, brand, max_p)
 
