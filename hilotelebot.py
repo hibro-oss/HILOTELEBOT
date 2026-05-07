@@ -531,11 +531,7 @@ async def nike(ctx: commands.Context):
             new_items.sort(key=get_price)
 
             for item in new_items[:5]:
-                purchase_price = get_price(item)
                 market = await fetch_market_price(session, brand, item.get("title", ""))
-
-                if market and purchase_price >= market * 0.90:
-                    continue
 
                 item_id = item.get("id")
                 sent_ids.add(item_id)
