@@ -17,6 +17,7 @@ BOT_TOKEN = os.getenv("BOT_TOKEN", "")
 MY_USER_ID = int(os.getenv("MY_USER_ID", "0"))
 BOT_ALL_CHANNEL_ID = int(os.getenv("BOT_ALL_CHANNEL_ID", "0"))
 NIKE_CHANNEL_ID = int(os.getenv("NIKE_CHANNEL_ID", "0"))
+CP_CHANNEL_ID = int(os.getenv("CP_CHANNEL_ID", "0"))
 HELP_CHANNEL_ID = int(os.getenv("HELP_CHANNEL_ID", "0"))
 VINTED_EMAIL = os.getenv("VINTED_EMAIL", "")
 VINTED_PASSWORD = os.getenv("VINTED_PASSWORD", "")
@@ -550,6 +551,46 @@ async def nike(ctx: commands.Context):
 
 
 # ============================================================
+# COMMANDE !cp
+# ============================================================
+@bot.command(name="cp")
+async def cp(ctx: commands.Context):
+    if ctx.author.id != MY_USER_ID:
+        await ctx.message.delete()
+        return
+
+    channel = bot.get_channel(CP_CHANNEL_ID) or ctx.channel
+    await ctx.send("🔍 Recherche des annonces CP Company en cours...", delete_after=5)
+
+    async with aiohttp.ClientSession() as session:
+        await get_vinted_cookie(session)
+
+        total_sent = 0
+        items = await fetch_items(session, "CP Company", MAX_PRICE.get("CP Company"))
+
+        new_items = [i for i in items if i.get("id") not in sent_ids]
+        new_items.sort(key=get_price)
+
+        for item in new_items[:5]:
+            market = await fetch_market_price(session, "CP Company", item.get("title", ""))
+
+            item_id = item.get("id")
+            sent_ids.add(item_id)
+
+            embed = build_embed(item, "CP Company", market)
+            buttons = build_buttons(item, "CP Company")
+
+            try:
+                await channel.send(embed=embed, view=buttons)
+                total_sent += 1
+                await asyncio.sleep(17)
+            except Exception as e:
+                print(f"[ERREUR] Envoi annonce CP Company {item_id}: {e}")
+
+    await ctx.send(f"✅ {total_sent} annonces CP Company envoyées !", delete_after=10)
+
+
+# ============================================================
 # COMMANDE /help
 # ============================================================
 @bot.tree.command(name="help", description="Afficher toutes les commandes du bot")
@@ -568,7 +609,12 @@ async def help_cmd(interaction: discord.Interaction):
     )
     embed.add_field(
         name="👟 !nike",
-        value="Lance la recherche Nike & Nike ACG et envoie les annonces dans le salon Nike.",
+        value="Lance la recherche Nike et envoie les annonces dans le salon Nike.",
+        inline=False,
+    )
+    embed.add_field(
+        name="🧥 !cp",
+        value="Lance la recherche CP Company et envoie les annonces dans le salon CP Company.",
         inline=False,
     )
     embed.add_field(
