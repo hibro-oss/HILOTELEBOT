@@ -16,6 +16,7 @@ load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN", "")
 MY_USER_ID = int(os.getenv("MY_USER_ID", "0"))
 BOT_ALL_CHANNEL_ID = int(os.getenv("BOT_ALL_CHANNEL_ID", "0"))
+NIKE_CHANNEL_ID = int(os.getenv("NIKE_CHANNEL_ID", "0"))
 VINTED_EMAIL = os.getenv("VINTED_EMAIL", "")
 VINTED_PASSWORD = os.getenv("VINTED_PASSWORD", "")
 
@@ -503,6 +504,52 @@ async def botall(ctx: commands.Context):
                     print(f"[ERREUR] Envoi annonce {item_id}: {e}")
 
     await ctx.send(f"✅ {total_sent} annonces envoyées !", delete_after=10)
+
+
+# ============================================================
+# COMMANDE !nike
+# ============================================================
+@bot.command(name="nike")
+async def nike(ctx: commands.Context):
+    if ctx.author.id != MY_USER_ID:
+        await ctx.message.delete()
+        return
+
+    channel = bot.get_channel(NIKE_CHANNEL_ID) or ctx.channel
+    await ctx.send("🔍 Recherche des annonces Nike en cours...", delete_after=5)
+
+    async with aiohttp.ClientSession() as session:
+        await get_vinted_cookie(session)
+
+        total_sent = 0
+        for brand in ("Nike", "Nike ACG"):
+            max_p = MAX_PRICE.get(brand)
+            items = await fetch_items(session, brand, max_p)
+
+            new_items = [i for i in items if i.get("id") not in sent_ids and is_interesting(i)]
+            new_items.sort(key=get_price)
+
+            for item in new_items[:5]:
+                purchase_price = get_price(item)
+                market = await fetch_market_price(session, brand, item.get("title", ""))
+
+                if market and purchase_price >= market * 0.90:
+                    continue
+
+                item_id = item.get("id")
+                sent_ids.add(item_id)
+
+                embed = build_embed(item, brand, market)
+                buttons = build_buttons(item, brand)
+
+                try:
+                    await channel.send(embed=embed, view=buttons)
+                    total_sent += 1
+                    await asyncio.sleep(5)
+                except Exception as e:
+                    print(f"[ERREUR] Envoi annonce Nike {item_id}: {e}")
+
+    await ctx.send(f"✅ {total_sent} annonces Nike envoyées !", delete_after=10)
 
 
 # ============================================================
