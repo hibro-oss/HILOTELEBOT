@@ -674,6 +674,24 @@ async def stussy(ctx: commands.Context):
 
 
 # ============================================================
+# COMMANDE !startall
+# ============================================================
+@bot.command(name="startall")
+async def startall(ctx: commands.Context):
+    if ctx.author.id != MY_USER_ID:
+        await ctx.message.delete()
+        return
+
+    await ctx.send("🚀 Lancement de toutes les recherches...", delete_after=5)
+    await ctx.invoke(bot.get_command("hiloteall"))
+    await ctx.invoke(bot.get_command("nike"))
+    await ctx.invoke(bot.get_command("cp"))
+    await ctx.invoke(bot.get_command("trap"))
+    await ctx.invoke(bot.get_command("stussy"))
+    await ctx.send("✅ Toutes les recherches sont terminées !", delete_after=10)
+
+
+# ============================================================
 # COMMANDE /help
 # ============================================================
 @bot.tree.command(name="help", description="Afficher toutes les commandes du bot")
@@ -684,6 +702,11 @@ async def help_cmd(interaction: discord.Interaction):
         title="📖 Commandes du bot",
         description="Toutes les commandes disponibles sur **Vinted Lab | hilote**",
         color=0x1a73e8,
+    )
+    embed.add_field(
+        name="🚀 !startall",
+        value="Lance toutes les recherches de toutes les marques dans leurs salons respectifs.",
+        inline=False,
     )
     embed.add_field(
         name="🔍 !hiloteall",
