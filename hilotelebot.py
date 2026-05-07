@@ -352,7 +352,7 @@ async def fetch_resale_price(session: aiohttp.ClientSession, brand: str, title: 
             timeout=aiohttp.ClientTimeout(total=8)
         ) as resp:
             if resp.status != 200:
-                return f"~{purchase_price + 3:.0f} €"
+                return f"{purchase_price + 3:.0f} €"
             data = await resp.json()
             items = data.get("items", [])
             prices = []
@@ -365,16 +365,16 @@ async def fetch_resale_price(session: aiohttp.ClientSession, brand: str, title: 
                 except (ValueError, TypeError):
                     pass
             if not prices:
-                return f"~{purchase_price + 3:.0f} €"
+                return f"{purchase_price + 3:.0f} €"
             # Exclure les valeurs aberrantes (top et bottom 20%)
             prices.sort()
             cut = max(1, len(prices) // 5)
             prices = prices[cut:-cut] if len(prices) > 2 else prices
             market_price = prices[len(prices) // 2]
             resale = max(market_price + 3, purchase_price + 3)
-            return f"~{resale:.0f} €"
+            return f"{resale:.0f} €"
     except Exception:
-        return f"~{purchase_price + 3:.0f} €"
+        return f"{purchase_price + 3:.0f} €"
 
 
 def is_interesting(item: dict) -> bool:
