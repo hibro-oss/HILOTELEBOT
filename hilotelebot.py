@@ -371,7 +371,8 @@ async def fetch_resale_price(session: aiohttp.ClientSession, brand: str, title: 
             cut = max(1, len(prices) // 5)
             prices = prices[cut:-cut] if len(prices) > 2 else prices
             market_price = prices[len(prices) // 2]
-            return f"~{market_price + 3:.0f} €"
+            resale = max(market_price + 3, purchase_price + 3)
+            return f"~{resale:.0f} €"
     except Exception:
         return f"~{purchase_price + 3:.0f} €"
 
