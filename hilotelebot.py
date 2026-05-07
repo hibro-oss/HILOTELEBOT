@@ -17,6 +17,7 @@ BOT_TOKEN = os.getenv("BOT_TOKEN", "")
 MY_USER_ID = int(os.getenv("MY_USER_ID", "0"))
 BOT_ALL_CHANNEL_ID = int(os.getenv("BOT_ALL_CHANNEL_ID", "0"))
 NIKE_CHANNEL_ID = int(os.getenv("NIKE_CHANNEL_ID", "0"))
+HELP_CHANNEL_ID = int(os.getenv("HELP_CHANNEL_ID", "0"))
 VINTED_EMAIL = os.getenv("VINTED_EMAIL", "")
 VINTED_PASSWORD = os.getenv("VINTED_PASSWORD", "")
 
@@ -550,6 +551,58 @@ async def nike(ctx: commands.Context):
                     print(f"[ERREUR] Envoi annonce Nike {item_id}: {e}")
 
     await ctx.send(f"✅ {total_sent} annonces Nike envoyées !", delete_after=10)
+
+
+# ============================================================
+# COMMANDE /help
+# ============================================================
+@bot.tree.command(name="help", description="Afficher toutes les commandes du bot")
+async def help_cmd(interaction: discord.Interaction):
+    await interaction.response.defer(ephemeral=True)
+
+    embed = discord.Embed(
+        title="📖 Commandes du bot",
+        description="Toutes les commandes disponibles sur **Vinted Lab | hilote**",
+        color=0x1a73e8,
+    )
+    embed.add_field(
+        name="!botall",
+        value="Lance la recherche de toutes les marques et envoie les meilleures annonces dans le salon principal.",
+        inline=False,
+    )
+    embed.add_field(
+        name="!nike",
+        value="Lance la recherche Nike & Nike ACG et envoie les annonces dans le salon Nike.",
+        inline=False,
+    )
+    embed.add_field(
+        name="/favoris",
+        value="Envoie tes articles favoris en message privé.",
+        inline=False,
+    )
+    embed.add_field(
+        name="/help",
+        value="Affiche cette liste de commandes dans le salon help.",
+        inline=False,
+    )
+    embed.add_field(
+        name="⭐ Favoriser / 💛 Favori",
+        value="Bouton sur chaque annonce pour ajouter ou retirer un article de tes favoris.",
+        inline=False,
+    )
+    embed.add_field(
+        name="⚡ Autobuy",
+        value="Bouton sur chaque annonce pour acheter automatiquement l'article sur Vinted.",
+        inline=False,
+    )
+    embed.set_footer(text="🏷️ Vinted Lab | hilote")
+
+    help_channel = bot.get_channel(HELP_CHANNEL_ID)
+    if help_channel:
+        await help_channel.send(embed=embed)
+        await interaction.followup.send("✅ Commandes envoyées dans le salon help !", ephemeral=True)
+    else:
+        await interaction.followup.send(embed=embed, ephemeral=True)
 
 
 # ============================================================
