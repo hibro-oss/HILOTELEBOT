@@ -585,16 +585,6 @@ async def help_cmd(interaction: discord.Interaction):
         value="Affiche cette liste de commandes dans le salon help.",
         inline=False,
     )
-    embed.add_field(
-        name="💛 Favoriser / Retirer",
-        value="Bouton sur chaque annonce pour ajouter ou retirer un article de tes favoris.",
-        inline=False,
-    )
-    embed.add_field(
-        name="⚡ Autobuy",
-        value="Bouton sur chaque annonce pour acheter automatiquement l'article sur Vinted.",
-        inline=False,
-    )
     embed.set_footer(text="🏷️ Vinted Lab | hilote")
 
     help_channel = bot.get_channel(HELP_CHANNEL_ID)
