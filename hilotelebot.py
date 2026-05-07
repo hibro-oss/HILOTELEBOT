@@ -498,7 +498,7 @@ async def botall(ctx: commands.Context):
                 try:
                     await channel.send(embed=embed, view=buttons)
                     total_sent += 1
-                    await asyncio.sleep(20)
+                    await asyncio.sleep(5)
                 except Exception as e:
                     print(f"[ERREUR] Envoi annonce {item_id}: {e}")
 
