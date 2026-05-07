@@ -461,10 +461,10 @@ def build_buttons(item: dict, brand: str) -> discord.ui.View:
 
 
 # ============================================================
-# COMMANDE !botall
+# COMMANDE !hiloteall
 # ============================================================
-@bot.command(name="botall")
-async def botall(ctx: commands.Context):
+@bot.command(name="hiloteall")
+async def hiloteall(ctx: commands.Context):
     if ctx.author.id != MY_USER_ID:
         await ctx.message.delete()
         return
@@ -566,7 +566,7 @@ async def help_cmd(interaction: discord.Interaction):
         color=0x1a73e8,
     )
     embed.add_field(
-        name="🔍 !botall",
+        name="🔍 !hiloteall",
         value="Lance la recherche de toutes les marques et envoie les meilleures annonces dans le salon principal.",
         inline=False,
     )
