@@ -164,6 +164,21 @@ sent_ids: set[int] = set()
 # ============================================================
 # AUTOBUY — Playwright
 # ============================================================
+async def _dismiss_overlays(page) -> None:
+    await page.evaluate("""
+        () => {
+            ['onetrust-banner-sdk', 'onetrust-pc-dark-filter', 'onetrust-consent-sdk'].forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.remove();
+            });
+            document.querySelectorAll('[class*="modal--overlay"], [class*="overlay--"], [data-testid*="modal"]')
+                .forEach(el => el.remove());
+            document.body.style.overflow = 'auto';
+            document.body.style.pointerEvents = 'auto';
+        }
+    """)
+
+
 async def vinted_autobuy(item_url: str) -> tuple[bool, str]:
     if not VINTED_EMAIL or not VINTED_PASSWORD:
         return False, "VINTED_EMAIL / VINTED_PASSWORD manquants dans .env"
@@ -178,22 +193,49 @@ async def vinted_autobuy(item_url: str) -> tuple[bool, str]:
             )
             page = await ctx.new_page()
 
-            # Login
-            await page.goto("https://www.vinted.fr/login", wait_until="domcontentloaded")
-            await page.fill('input[name="username"]', VINTED_EMAIL)
-            await page.fill('input[name="password"]', VINTED_PASSWORD)
-            await page.click('button[type="submit"]')
-            await page.wait_for_load_state("networkidle", timeout=15000)
+            # LOGIN via la vraie page d'auth Vinted
+            await page.goto(
+                "https://www.vinted.fr/member/signup/select_type",
+                wait_until="domcontentloaded",
+            )
+            await asyncio.sleep(2)
+            await _dismiss_overlays(page)
+            await asyncio.sleep(0.5)
 
-            if "login" in page.url:
+            # Cliquer sur "Continuer avec e-mail"
+            email_btn = page.locator('[data-testid="auth-select-type--register-email"]')
+            await email_btn.wait_for(state="visible", timeout=10000)
+            await email_btn.click()
+            await asyncio.sleep(1)
+
+            email_input = page.locator(
+                'input[name="email"], input[type="email"], input[autocomplete="email"]'
+            ).first
+            await email_input.wait_for(state="visible", timeout=10000)
+            await email_input.fill(VINTED_EMAIL)
+
+            next_btn = page.locator('button[type="submit"]').first
+            if await next_btn.is_visible():
+                await next_btn.click()
+                await asyncio.sleep(1)
+
+            pwd_input = page.locator('input[name="password"], input[type="password"]').first
+            await pwd_input.wait_for(state="visible", timeout=10000)
+            await pwd_input.fill(VINTED_PASSWORD)
+
+            submit_btn = page.locator('button[type="submit"]').first
+            await submit_btn.click()
+            await page.wait_for_load_state("networkidle", timeout=20000)
+
+            if "/member/signup" in page.url or "select_type" in page.url:
                 await browser.close()
-                return False, "Échec du login — vérifie tes credentials dans .env"
+                return False, "Échec du login — vérifie ton e-mail / mot de passe dans .env"
 
-            # Aller sur l'article
+            # ACHAT
             await page.goto(item_url, wait_until="domcontentloaded")
-            await page.wait_for_load_state("networkidle", timeout=10000)
+            await asyncio.sleep(2)
+            await _dismiss_overlays(page)
 
-            # Cliquer sur "Acheter"
             buy_btn = page.locator('[data-testid="item-action-buttons-buy-now"]')
             if not await buy_btn.is_visible(timeout=5000):
                 await browser.close()
@@ -201,7 +243,6 @@ async def vinted_autobuy(item_url: str) -> tuple[bool, str]:
             await buy_btn.click()
             await page.wait_for_load_state("networkidle", timeout=10000)
 
-            # Confirmer la commande
             confirm_btn = page.locator('[data-testid="checkout-submit-button"]')
             if not await confirm_btn.is_visible(timeout=5000):
                 await browser.close()
