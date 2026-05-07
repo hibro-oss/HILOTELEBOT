@@ -566,27 +566,27 @@ async def help_cmd(interaction: discord.Interaction):
         color=0x1a73e8,
     )
     embed.add_field(
-        name="!botall",
+        name="🔍 !botall",
         value="Lance la recherche de toutes les marques et envoie les meilleures annonces dans le salon principal.",
         inline=False,
     )
     embed.add_field(
-        name="!nike",
+        name="👟 !nike",
         value="Lance la recherche Nike & Nike ACG et envoie les annonces dans le salon Nike.",
         inline=False,
     )
     embed.add_field(
-        name="/favoris",
+        name="⭐ /favoris",
         value="Envoie tes articles favoris en message privé.",
         inline=False,
     )
     embed.add_field(
-        name="/help",
+        name="📖 /help",
         value="Affiche cette liste de commandes dans le salon help.",
         inline=False,
     )
     embed.add_field(
-        name="⭐ Favoriser / 💛 Favori",
+        name="💛 Favoriser / Retirer",
         value="Bouton sur chaque annonce pour ajouter ou retirer un article de tes favoris.",
         inline=False,
     )
