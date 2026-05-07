@@ -479,8 +479,9 @@ async def hiloteall(ctx: commands.Context):
     async with aiohttp.ClientSession() as session:
         await get_vinted_cookie(session)
 
+        BRANDS_SALON_DEDIE = {"Nike", "CP Company", "Trapstar", "Stussy"}
         total_sent = 0
-        for brand in BRANDS:
+        for brand in [b for b in BRANDS if b not in BRANDS_SALON_DEDIE]:
             max_p = MAX_PRICE.get(brand)
             items = await fetch_items(session, brand, max_p)
 
