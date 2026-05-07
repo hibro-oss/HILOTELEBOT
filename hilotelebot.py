@@ -335,15 +335,14 @@ async def fetch_items(session: aiohttp.ClientSession, brand: str, max_price: flo
         return []
 
 
-async def fetch_resale_price(session: aiohttp.ClientSession, brand: str, title: str) -> str:
+async def fetch_resale_price(session: aiohttp.ClientSession, brand: str, title: str, purchase_price: float) -> str:
     keywords = " ".join(title.split()[:3])
     params = {
         "search_text": f"{brand} {keywords}",
         "catalog_ids": "2050,4",
-        "order": "price_high_to_low",
-        "per_page": 15,
+        "order": "relevance",
+        "per_page": 20,
         "page": 1,
-        "price_from": 20,
     }
     try:
         async with session.get(
@@ -353,7 +352,7 @@ async def fetch_resale_price(session: aiohttp.ClientSession, brand: str, title: 
             timeout=aiohttp.ClientTimeout(total=8)
         ) as resp:
             if resp.status != 200:
-                return "N/A"
+                return f"~{purchase_price + 3:.0f} €"
             data = await resp.json()
             items = data.get("items", [])
             prices = []
@@ -366,11 +365,15 @@ async def fetch_resale_price(session: aiohttp.ClientSession, brand: str, title: 
                 except (ValueError, TypeError):
                     pass
             if not prices:
-                return "N/A"
-            median = sorted(prices)[len(prices) // 2]
-            return f"~{median:.0f} €"
+                return f"~{purchase_price + 3:.0f} €"
+            # Exclure les valeurs aberrantes (top et bottom 20%)
+            prices.sort()
+            cut = max(1, len(prices) // 5)
+            prices = prices[cut:-cut] if len(prices) > 2 else prices
+            market_price = prices[len(prices) // 2]
+            return f"~{market_price + 3:.0f} €"
     except Exception:
-        return "N/A"
+        return f"~{purchase_price + 3:.0f} €"
 
 
 def is_interesting(item: dict) -> bool:
@@ -473,7 +476,7 @@ async def botall(ctx: commands.Context):
                 item_id = item.get("id")
                 sent_ids.add(item_id)
 
-                resale = await fetch_resale_price(session, brand, item.get("title", ""))
+                resale = await fetch_resale_price(session, brand, item.get("title", ""), get_price(item))
                 embed = build_embed(item, brand, resale)
                 buttons = build_buttons(item, brand)
 
