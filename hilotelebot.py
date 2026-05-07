@@ -500,7 +500,7 @@ async def hiloteall(ctx: commands.Context):
                 try:
                     await channel.send(embed=embed, view=buttons)
                     total_sent += 1
-                    await asyncio.sleep(30)
+                    await asyncio.sleep(17)
                 except Exception as e:
                     print(f"[ERREUR] Envoi annonce {item_id}: {e}")
 
@@ -542,7 +542,7 @@ async def nike(ctx: commands.Context):
                 try:
                     await channel.send(embed=embed, view=buttons)
                     total_sent += 1
-                    await asyncio.sleep(30)
+                    await asyncio.sleep(17)
                 except Exception as e:
                     print(f"[ERREUR] Envoi annonce Nike {item_id}: {e}")
 
