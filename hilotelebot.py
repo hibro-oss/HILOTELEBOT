@@ -494,7 +494,7 @@ async def botall(ctx: commands.Context):
 # ============================================================
 # COMMANDE !favoris
 # ============================================================
-@bot.tree.command(name="favoris", description="Voir tes favoris")
+@bot.tree.command(name="favoris", description="Voir tes favoris en MP")
 async def favoris(interaction: discord.Interaction):
     await interaction.response.defer(ephemeral=True)
 
@@ -503,27 +503,37 @@ async def favoris(interaction: discord.Interaction):
         await interaction.followup.send("Aucun favori enregistré.", ephemeral=True)
         return
 
-    await interaction.followup.send(f"⭐ **{len(user_favs)} favori(s) :**", ephemeral=True)
+    try:
+        dm = await interaction.user.create_dm()
+        await dm.send(f"⭐ **{len(user_favs)} favori(s) :**")
 
-    for item_id, data in list(user_favs.items()):
-        embed = discord.Embed(
-            title=data.get("title", "?"),
-            url=data.get("url", ""),
-            color=0xFFD700
+        for item_id, data in list(user_favs.items()):
+            embed = discord.Embed(
+                title=data.get("title", "?"),
+                url=data.get("url", ""),
+                color=0xFFD700
+            )
+            embed.add_field(name="🏷 Marque", value=data.get("brand", "?"), inline=True)
+            embed.add_field(name="📐 Taille", value=data.get("size", "?"), inline=True)
+            embed.add_field(name="💰 Prix", value=f"{data.get('price', '?')} €", inline=True)
+            embed.set_footer(text="🏷️ Vinted Lab | favoris")
+            if data.get("photo"):
+                embed.set_image(url=data["photo"])
+
+            view = discord.ui.View(timeout=300)
+            view.add_item(discord.ui.Button(label="🔗 Voir sur Vinted", style=discord.ButtonStyle.secondary, url=data.get("url", "")))
+            view.add_item(RemoveFavBtn(item_id=item_id, user_id=interaction.user.id))
+
+            await dm.send(embed=embed, view=view)
+            await asyncio.sleep(0.3)
+
+        await interaction.followup.send("📬 Tes favoris t'ont été envoyés en MP !", ephemeral=True)
+
+    except discord.Forbidden:
+        await interaction.followup.send(
+            "❌ Je ne peux pas t'envoyer de MP. Active les messages privés dans tes paramètres Discord.",
+            ephemeral=True
         )
-        embed.add_field(name="🏷 Marque", value=data.get("brand", "?"), inline=True)
-        embed.add_field(name="📐 Taille", value=data.get("size", "?"), inline=True)
-        embed.add_field(name="💰 Prix", value=f"{data.get('price', '?')} €", inline=True)
-        embed.set_footer(text="🏷️ Vinted Lab | favoris")
-        if data.get("photo"):
-            embed.set_image(url=data["photo"])
-
-        view = discord.ui.View(timeout=300)
-        view.add_item(discord.ui.Button(label="🔗 Voir sur Vinted", style=discord.ButtonStyle.secondary, url=data.get("url", "")))
-        view.add_item(RemoveFavBtn(item_id=item_id, user_id=interaction.user.id))
-
-        await interaction.followup.send(embed=embed, view=view, ephemeral=True)
-        await asyncio.sleep(0.3)
 
 
 # ============================================================
