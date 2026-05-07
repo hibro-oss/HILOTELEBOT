@@ -527,7 +527,7 @@ async def nike(ctx: commands.Context):
             max_p = MAX_PRICE.get(brand)
             items = await fetch_items(session, brand, max_p)
 
-            new_items = [i for i in items if i.get("id") not in sent_ids and is_interesting(i)]
+            new_items = [i for i in items if i.get("id") not in sent_ids]
             new_items.sort(key=get_price)
 
             for item in new_items[:5]:
