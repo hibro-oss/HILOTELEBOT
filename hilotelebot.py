@@ -1,6 +1,5 @@
 import os
 import json
-import base64
 import discord
 from discord.ext import commands
 import aiohttp
@@ -8,7 +7,6 @@ import asyncio
 from datetime import datetime
 from dotenv import load_dotenv
 from playwright.async_api import async_playwright
-import anthropic
 
 load_dotenv()
 
@@ -41,7 +39,6 @@ TIPS_CHANNEL_ID     = 1488998641380102336
 HELP_CHANNEL_ID     = 0
 VINTED_EMAIL = os.getenv("VINTED_EMAIL", "")
 VINTED_PASSWORD = os.getenv("VINTED_PASSWORD", "")
-ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 
 # Marques à surveiller
 BRANDS = [
@@ -1396,83 +1393,6 @@ async def tuto(interaction: discord.Interaction):
     await interaction.followup.send(f"✅ Tutoriel envoyé dans {channel.mention} !", ephemeral=True)
 
 
-# ============================================================
-# COMMANDE /lc — Légit Check (authentique ou faux ?)
-# ============================================================
-@bot.tree.command(name="lc", description="Vérifie si un article est authentique ou fake — envoie une photo !")
-@discord.app_commands.describe(image="La photo de l'article à vérifier")
-async def lc(interaction: discord.Interaction, image: discord.Attachment):
-    if not image.content_type or not image.content_type.startswith("image/"):
-        await interaction.response.send_message(
-            "❌ Envoie une **image** (jpg, png, etc.), pas un autre type de fichier.",
-            ephemeral=True,
-        )
-        return
-
-    await interaction.response.defer()
-
-    if not ANTHROPIC_API_KEY:
-        await interaction.followup.send("❌ Clé API Anthropic manquante dans le fichier `.env` (`ANTHROPIC_API_KEY`).")
-        return
-
-    # Télécharger l'image
-    async with aiohttp.ClientSession() as session:
-        async with session.get(image.url) as resp:
-            if resp.status != 200:
-                await interaction.followup.send("❌ Impossible de télécharger l'image, réessaie.")
-                return
-            image_bytes = await resp.read()
-
-    image_b64 = base64.standard_b64encode(image_bytes).decode("utf-8")
-    media_type = image.content_type.split(";")[0]
-
-    client = anthropic.AsyncAnthropic(api_key=ANTHROPIC_API_KEY)
-
-    message = await client.messages.create(
-        model="claude-opus-4-5",
-        max_tokens=1024,
-        messages=[
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "image",
-                        "source": {
-                            "type": "base64",
-                            "media_type": media_type,
-                            "data": image_b64,
-                        },
-                    },
-                    {
-                        "type": "text",
-                        "text": (
-                            "Tu es un expert en authentification de vêtements et sneakers de marque. "
-                            "Analyse cette image et dis-moi si l'article semble AUTHENTIQUE ou FAKE (contrefaçon). "
-                            "Réponds en français. Structure ta réponse ainsi :\n\n"
-                            "**Verdict : ✅ AUTHENTIQUE** ou **Verdict : ❌ FAKE (contrefaçon)**\n\n"
-                            "**Points analysés :**\n"
-                            "- (liste les détails que tu as observés : logo, coutures, étiquettes, qualité, etc.)\n\n"
-                            "**Niveau de confiance :** (Faible / Moyen / Élevé)\n\n"
-                            "**Conseils :** (ce qu'il faudrait vérifier en plus si tu n'es pas sûr)\n\n"
-                            "Si l'image n'est pas assez claire ou ne montre pas suffisamment de détails, dis-le clairement."
-                        ),
-                    },
-                ],
-            }
-        ],
-    )
-
-    result_text = message.content[0].text
-
-    embed = discord.Embed(
-        title="🔍 Légit Check",
-        description=result_text,
-        color=0x00C851 if "AUTHENTIQUE" in result_text else 0xFF4444,
-    )
-    embed.set_thumbnail(url=image.url)
-    embed.set_footer(text=f"🏷️ Vinted Lab | Légit Check • Demandé par {interaction.user.display_name}")
-
-    await interaction.followup.send(embed=embed)
 
 
 # ============================================================
