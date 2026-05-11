@@ -91,70 +91,6 @@ HEADERS = {
 }
 
 # ============================================================
-# VIP
-# ============================================================
-VIP_FILE = "vip_users.json"
-
-def load_vip() -> list:
-    try:
-        with open(VIP_FILE, encoding="utf-8") as f:
-            return json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError):
-        return []
-
-def save_vip(vip_list: list) -> None:
-    with open(VIP_FILE, "w", encoding="utf-8") as f:
-        json.dump(vip_list, f, indent=2)
-
-VIP_GROSSISTES = """
-🏭 **TOP 3 GROSSISTES ACTUELS — ACHAT REVENTE**
-
-**1️⃣ Ankorstore** — ankorstore.com
-> Le meilleur grossiste européen. Marques légitimes, commandes min. faibles.
-> Idéal pour : vêtements lifestyle, accessoires, chaussures.
-> 💡 Astuce : profite des -30% première commande.
-
-**2️⃣ Faire** — faire.com
-> Grossiste premium US/EU. Marques indépendantes tendance.
-> Idéal pour : streetwear émergent, pièces rares à fort potentiel resell.
-> 💡 Paiement en 60 jours sans intérêts pour les nouveaux.
-
-**3️⃣ Alibaba / 1688** — alibaba.com / 1688.com
-> Le géant chinois. Prix imbattables sur les grandes marques lifestyle.
-> Idéal pour : volumes importants, marges maximales.
-> 💡 Utilise 1688.com (version chinoise) pour des prix encore plus bas.
-"""
-
-VIP_NICHES = """
-🔥 **TOP 5 NICHES ACHAT/REVENTE 2025**
-
-**1️⃣ Doudounes techniques — Marge moy. +60%**
-> Marques : Arc'teryx, Patagonia, The North Face, Jott
-> Stratégie : achète hors saison (été) → revends en automne/hiver
-> Prix achat cible : -50% du prix neuf
-
-**2️⃣ Streetwear limité — Marge moy. +100%**
-> Marques : Corteiz, Stussy, Supreme, Palace
-> Stratégie : surveille les drops → revends dans les 48h après le drop
-> Plateforme idéale : Vinted + StockX pour les pièces premium
-
-**3️⃣ Workwear vintage — Marge moy. +80%**
-> Marques : Carhartt, Dickies, Wrangler
-> Stratégie : trouve des pièces usagées avec caractère → photos soignées
-> Tendance très forte chez les 18-25 ans en ce moment
-
-**4️⃣ Sneakers rétro — Marge moy. +70%**
-> Modèles : Nike Dunk, Air Max 90, New Balance 990, Adidas Samba
-> Stratégie : surveille les restocks → achète en promo → revends
-> Outil indispensable : SNKRS app + Vinted + Leboncoin
-
-**5️⃣ Luxe accessible — Marge moy. +50%**
-> Marques : Stone Island, CP Company, Lacoste vintage
-> Stratégie : achète des pièces en mauvais état → nettoyage pro → revends
-> 💡 Un nettoyage à 10€ peut faire gagner 40€ sur le prix de revente
-"""
-
-# ============================================================
 # FAVORIS
 # ============================================================
 FAVORITES_FILE = "favorites.json"
@@ -255,6 +191,9 @@ sent_ids: set[int] = set()
 # Tâches en cours par salon (pour pouvoir les arrêter)
 running_tasks: dict[str, asyncio.Task] = {}
 
+# Limiteur global — 1 seule requête Vinted à la fois
+vinted_sem = asyncio.Semaphore(1)
+
 
 async def monitor_brand(channel: discord.TextChannel, brand: str, max_price: float | None, apply_filter: bool = False):
     """Boucle infinie : récupère et envoie les nouvelles annonces d'une marque toutes les 30s."""
@@ -299,7 +238,7 @@ async def monitor_brand(channel: discord.TextChannel, brand: str, max_price: flo
         except Exception as e:
             print(f"[ERREUR] monitor_brand {brand}: {e}")
 
-        await asyncio.sleep(30)
+        await asyncio.sleep(60)
 
 
 async def start_monitor(ctx: commands.Context, key: str, channel: discord.TextChannel, brand: str, max_price: float | None, apply_filter: bool = False):
@@ -453,10 +392,34 @@ class AutobuyBtn(discord.ui.Button):
 # ============================================================
 async def get_vinted_cookie(session: aiohttp.ClientSession) -> None:
     try:
-        async with session.get(VINTED_BASE, headers=HEADERS) as resp:
-            pass
+        async with vinted_sem:
+            async with session.get(VINTED_BASE, headers=HEADERS) as resp:
+                pass
+            await asyncio.sleep(1)
     except Exception:
         pass
+
+
+async def _vinted_get(session: aiohttp.ClientSession, url: str, params: dict, timeout: int = 10) -> dict | None:
+    """Requête Vinted avec limiteur global et retry automatique sur 429."""
+    for attempt in range(3):
+        try:
+            async with vinted_sem:
+                async with session.get(url, headers=HEADERS, params=params, timeout=aiohttp.ClientTimeout(total=timeout)) as resp:
+                    if resp.status == 429:
+                        wait = 30 * (attempt + 1)
+                        print(f"[429] Rate limit Vinted — pause {wait}s")
+                        await asyncio.sleep(wait)
+                        continue
+                    if resp.status != 200:
+                        return None
+                    data = await resp.json()
+                await asyncio.sleep(2)
+            return data
+        except Exception as e:
+            print(f"[ERREUR] _vinted_get: {e}")
+            await asyncio.sleep(5)
+    return None
 
 
 async def fetch_items(session: aiohttp.ClientSession, brand: str, max_price: float | None) -> list:
@@ -466,24 +429,10 @@ async def fetch_items(session: aiohttp.ClientSession, brand: str, max_price: flo
         "order": "newest_first",
         "per_page": 20,
         "page": 1,
+        "price_to": max_price if max_price else 25,
     }
-    params["price_to"] = min(max_price, 25) if max_price else 25
-
-    try:
-        async with session.get(
-            f"{VINTED_API}/catalog/items",
-            headers=HEADERS,
-            params=params,
-            timeout=aiohttp.ClientTimeout(total=10)
-        ) as resp:
-            if resp.status != 200:
-                print(f"[ERREUR] fetch_items {brand}: HTTP {resp.status}")
-                return []
-            data = await resp.json()
-            return data.get("items", [])
-    except Exception as e:
-        print(f"[ERREUR] fetch_items {brand}: {e}")
-        return []
+    data = await _vinted_get(session, f"{VINTED_API}/catalog/items", params)
+    return data.get("items", []) if data else []
 
 
 async def fetch_market_price(session: aiohttp.ClientSession, brand: str, title: str) -> float | None:
@@ -495,34 +444,25 @@ async def fetch_market_price(session: aiohttp.ClientSession, brand: str, title: 
         "per_page": 20,
         "page": 1,
     }
-    try:
-        async with session.get(
-            f"{VINTED_API}/catalog/items",
-            headers=HEADERS,
-            params=params,
-            timeout=aiohttp.ClientTimeout(total=8)
-        ) as resp:
-            if resp.status != 200:
-                return None
-            data = await resp.json()
-            items = data.get("items", [])
-            prices = []
-            for item in items:
-                p = item.get("price")
-                if isinstance(p, dict):
-                    p = p.get("amount")
-                try:
-                    prices.append(float(p))
-                except (ValueError, TypeError):
-                    pass
-            if not prices:
-                return None
-            prices.sort()
-            cut = max(1, len(prices) // 5)
-            prices = prices[cut:-cut] if len(prices) > 2 else prices
-            return prices[len(prices) // 2]
-    except Exception:
+    data = await _vinted_get(session, f"{VINTED_API}/catalog/items", params, timeout=8)
+    if not data:
         return None
+    items = data.get("items", [])
+    prices = []
+    for item in items:
+        p = item.get("price")
+        if isinstance(p, dict):
+            p = p.get("amount")
+        try:
+            prices.append(float(p))
+        except (ValueError, TypeError):
+            pass
+    if not prices:
+        return None
+    prices.sort()
+    cut = max(1, len(prices) // 5)
+    prices = prices[cut:-cut] if len(prices) > 2 else prices
+    return prices[len(prices) // 2]
 
 
 SNEAKER_BRANDS = [
@@ -534,7 +474,6 @@ SNEAKER_BRANDS = [
 MAX_SNEAKER_PRICE = 80
 
 async def fetch_sneakers(session: aiohttp.ClientSession, search: str) -> list:
-    # catalog_ids 305 = chaussures homme, 16 = chaussures femme sur Vinted FR
     params = {
         "search_text": search,
         "catalog_ids": "305,16",
@@ -543,20 +482,8 @@ async def fetch_sneakers(session: aiohttp.ClientSession, search: str) -> list:
         "page": 1,
         "price_to": MAX_SNEAKER_PRICE,
     }
-    try:
-        async with session.get(
-            f"{VINTED_API}/catalog/items",
-            headers=HEADERS,
-            params=params,
-            timeout=aiohttp.ClientTimeout(total=10)
-        ) as resp:
-            if resp.status != 200:
-                return []
-            data = await resp.json()
-            return data.get("items", [])
-    except Exception as e:
-        print(f"[ERREUR] fetch_sneakers {search}: {e}")
-        return []
+    data = await _vinted_get(session, f"{VINTED_API}/catalog/items", params)
+    return data.get("items", []) if data else []
 
 
 async def monitor_sneakers(channel: discord.TextChannel):
@@ -593,7 +520,7 @@ async def monitor_sneakers(channel: discord.TextChannel):
         except Exception as e:
             print(f"[ERREUR] monitor_sneakers: {e}")
 
-        await asyncio.sleep(30)
+        await asyncio.sleep(60)
 
 
 TIPS_SEARCHES = [
@@ -622,7 +549,6 @@ TIPS_SEARCHES = [
 MAX_TIPS_PRICE = 80
 
 async def fetch_tips(session: aiohttp.ClientSession, search: str) -> list:
-    # catalog_ids 1904 = accessoires homme, 2 = accessoires femme sur Vinted FR
     params = {
         "search_text": search,
         "catalog_ids": "1904,2",
@@ -631,20 +557,8 @@ async def fetch_tips(session: aiohttp.ClientSession, search: str) -> list:
         "page": 1,
         "price_to": MAX_TIPS_PRICE,
     }
-    try:
-        async with session.get(
-            f"{VINTED_API}/catalog/items",
-            headers=HEADERS,
-            params=params,
-            timeout=aiohttp.ClientTimeout(total=10)
-        ) as resp:
-            if resp.status != 200:
-                return []
-            data = await resp.json()
-            return data.get("items", [])
-    except Exception as e:
-        print(f"[ERREUR] fetch_tips {search}: {e}")
-        return []
+    data = await _vinted_get(session, f"{VINTED_API}/catalog/items", params)
+    return data.get("items", []) if data else []
 
 
 async def monitor_tips(channel: discord.TextChannel):
@@ -699,7 +613,7 @@ async def monitor_tips(channel: discord.TextChannel):
         except Exception as e:
             print(f"[ERREUR] monitor_tips: {e}")
 
-        await asyncio.sleep(30)
+        await asyncio.sleep(60)
 
 
 def is_interesting(item: dict) -> bool:
@@ -1021,6 +935,56 @@ async def startall(ctx: commands.Context):
 
 
 # ============================================================
+# COMMANDE /close — Arrêter la recherche du salon actuel
+# ============================================================
+@bot.tree.command(name="close", description="Arrête la recherche en cours dans ce salon")
+async def close(interaction: discord.Interaction):
+    if not is_authorized(interaction.user.id):
+        await interaction.response.send_message("❌ Accès refusé.", ephemeral=True)
+        return
+
+    CHANNEL_TO_KEY = {
+        NIKE_CHANNEL_ID: ["nike"],
+        CP_CHANNEL_ID: ["cp"],
+        TRAP_CHANNEL_ID: ["trap"],
+        STUSSY_CHANNEL_ID: ["stussy"],
+        RALPH_CHANNEL_ID: ["ralph"],
+        JOTT_CHANNEL_ID: ["jott"],
+        NORTH_CHANNEL_ID: ["north"],
+        CARHARTT_CHANNEL_ID: ["carhartt"],
+        LACOSTE_CHANNEL_ID: ["lacoste"],
+        TOMMY_CHANNEL_ID: ["tommy"],
+        STONE_CHANNEL_ID: ["stone"],
+        CORTEIZ_CHANNEL_ID: ["corteiz"],
+        ADIDAS_CHANNEL_ID: ["adidas"],
+        LEVIS_CHANNEL_ID: ["levis"],
+        SNEAKERS_CHANNEL_ID: ["sneakers"],
+        TIPS_CHANNEL_ID: ["tips"],
+        BOT_ALL_CHANNEL_ID: [k for k in running_tasks if k.startswith("hiloteall_")],
+    }
+
+    channel_id = interaction.channel_id
+    keys = CHANNEL_TO_KEY.get(channel_id)
+
+    if not keys:
+        await interaction.response.send_message("❌ Aucune recherche associée à ce salon.", ephemeral=True)
+        return
+
+    stopped = 0
+    for key in list(keys) if isinstance(keys, list) else [keys]:
+        task = running_tasks.get(key)
+        if task and not task.done():
+            task.cancel()
+            del running_tasks[key]
+            stopped += 1
+
+    if stopped:
+        await interaction.response.send_message(f"🛑 Recherche arrêtée dans {interaction.channel.mention} !", ephemeral=True)
+    else:
+        await interaction.response.send_message("⚠️ Aucune recherche en cours dans ce salon.", ephemeral=True)
+
+
+# ============================================================
 # COMMANDE !stop
 # ============================================================
 @bot.command(name="stop")
@@ -1207,144 +1171,6 @@ async def favoris(interaction: discord.Interaction):
             "❌ Je ne peux pas t'envoyer de MP. Active les messages privés dans tes paramètres Discord.",
             ephemeral=True
         )
-
-
-# ============================================================
-# VIP — Boucle articles premium
-# ============================================================
-async def monitor_vip():
-    """Envoie les meilleures affaires (>30% sous marché) aux membres VIP en MP."""
-    while True:
-        try:
-            vip_ids = load_vip()
-            if not vip_ids:
-                await asyncio.sleep(60)
-                continue
-
-            for brand in BRANDS:
-                async with aiohttp.ClientSession() as session:
-                    await get_vinted_cookie(session)
-                    items = await fetch_items(session, brand, MAX_PRICE.get(brand))
-
-                new_items = [i for i in items if i.get("id") not in sent_ids]
-                new_items.sort(key=get_price)
-
-                for item in new_items[:5]:
-                    purchase_price = get_price(item)
-                    async with aiohttp.ClientSession() as session:
-                        market = await fetch_market_price(session, brand, item.get("title", ""))
-
-                    if not market or purchase_price >= market * 0.70:
-                        continue
-
-                    item_id = item.get("id")
-                    sent_ids.add(item_id)
-
-                    marge = market - purchase_price
-                    marge_pct = int(marge / market * 100)
-
-                    embed = discord.Embed(
-                        title=f"⭐ VIP — {item.get('title', '?')}",
-                        url=f"{VINTED_BASE}/items/{item_id}",
-                        color=0xFFD700,
-                        description=f"🔥 **{marge_pct}% sous le prix du marché** — affaire exceptionnelle !",
-                    )
-                    embed.add_field(name="🏷 Marque", value=brand, inline=True)
-                    embed.add_field(name="📐 Taille", value=item.get("size_title", "?"), inline=True)
-                    embed.add_field(name="💎 État", value=(item.get("status") or "?").replace("_", " ").title(), inline=True)
-                    embed.add_field(name="💰 Prix achat", value=f"{purchase_price:.0f} €", inline=True)
-                    embed.add_field(name="📊 Prix marché", value=f"{market:.0f} €", inline=True)
-                    embed.add_field(name="💸 Marge", value=f"+{marge:.0f} € ({marge_pct}%)", inline=True)
-
-                    photos = item.get("photos", [])
-                    if photos:
-                        embed.set_image(url=photos[0].get("full_size_url") or photos[0].get("url", ""))
-                    embed.set_footer(text="⭐ Vinted Lab | Accès VIP exclusif")
-
-                    view = discord.ui.View(timeout=86400)
-                    view.add_item(discord.ui.Button(label="🛒 Acheter", style=discord.ButtonStyle.primary, url=f"{VINTED_BASE}/items/{item_id}"))
-
-                    for vip_id in vip_ids:
-                        try:
-                            user = await bot.fetch_user(vip_id)
-                            dm = await user.create_dm()
-                            await dm.send(embed=embed, view=view)
-                        except Exception:
-                            try:
-                                owner = await bot.fetch_user(MY_USER_ID)
-                                dm = await owner.create_dm()
-                                await dm.send(f"⚠️ Impossible d'envoyer en MP au VIP `{vip_id}` — voici l'article :", embed=embed, view=view)
-                            except Exception:
-                                pass
-
-                    await asyncio.sleep(8)
-
-        except asyncio.CancelledError:
-            return
-        except Exception as e:
-            print(f"[ERREUR] monitor_vip: {e}")
-
-        await asyncio.sleep(60)
-
-
-# ============================================================
-# COMMANDES VIP
-# ============================================================
-@bot.command(name="addvip")
-async def addvip(ctx: commands.Context, user_id: int):
-    if not is_authorized(ctx.author.id):
-        await ctx.message.delete()
-        return
-    vip_list = load_vip()
-    if user_id in vip_list:
-        await ctx.send(f"⚠️ `{user_id}` est déjà VIP.", delete_after=8)
-        return
-    vip_list.append(user_id)
-    save_vip(vip_list)
-    try:
-        user = await bot.fetch_user(user_id)
-        dm = await user.create_dm()
-        await dm.send(
-            "⭐ **Bienvenue dans le club VIP Vinted Lab !**\n\n"
-            "Tu vas maintenant recevoir en MP :\n"
-            "✅ Les meilleures affaires Vinted (30%+ sous le marché)\n"
-            "✅ Accès aux top grossistes\n"
-            "✅ Les 5 niches les plus rentables\n\n"
-            "Bonne chasse 🔥"
-        )
-        await dm.send(VIP_GROSSISTES)
-        await asyncio.sleep(1)
-        await dm.send(VIP_NICHES)
-    except Exception:
-        pass
-    await ctx.send(f"✅ `{user_id}` ajouté aux VIP !", delete_after=8)
-
-
-@bot.command(name="removevip")
-async def removevip(ctx: commands.Context, user_id: int):
-    if not is_authorized(ctx.author.id):
-        await ctx.message.delete()
-        return
-    vip_list = load_vip()
-    if user_id not in vip_list:
-        await ctx.send(f"⚠️ `{user_id}` n'est pas VIP.", delete_after=8)
-        return
-    vip_list.remove(user_id)
-    save_vip(vip_list)
-    await ctx.send(f"✅ `{user_id}` retiré des VIP.", delete_after=8)
-
-
-@bot.command(name="listvip")
-async def listvip(ctx: commands.Context):
-    if not is_authorized(ctx.author.id):
-        await ctx.message.delete()
-        return
-    vip_list = load_vip()
-    if not vip_list:
-        await ctx.send("Aucun membre VIP.", delete_after=8)
-        return
-    ids = "\n".join(f"• `{uid}`" for uid in vip_list)
-    await ctx.send(f"⭐ **{len(vip_list)} VIP(s) :**\n{ids}", delete_after=15)
 
 
 # ============================================================
@@ -1658,8 +1484,6 @@ async def on_ready():
     print(f"✅ Bot connecté en tant que {bot.user} (ID: {bot.user.id})")
     print(f"   Salon : #bot-all ({BOT_ALL_CHANNEL_ID})")
     print(f"   Marques : {', '.join(BRANDS)}")
-    asyncio.create_task(monitor_vip())
-    print(f"   ⭐ Boucle VIP démarrée ({len(load_vip())} membre(s))")
     await bot.change_presence(
         activity=discord.Activity(
             type=discord.ActivityType.watching,
